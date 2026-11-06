@@ -1,0 +1,11 @@
+node_modules/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+.env
+.env*.local
+.vercel/
+.DS_Store
+supabase/.temp/
+e2e/screenshots/

@@ -1,0 +1,20 @@
+{
+  "name": "restaurant-loyalty",
+  "private": true,
+  "packageManager": "pnpm@10.28.0",
+  "scripts": {
+    "dev": "pnpm --filter web dev",
+    "build": "pnpm --filter web build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "test:db": "scripts/test-db.sh",
+    "test:e2e": "node e2e/journey.mjs",
+    "supabase": "supabase"
+  },
+  "devDependencies": {
+    "pg": "^8.23.1",
+    "playwright": "1.65.0",
+    "supabase": "^3.0.0"
+  }
+}
