@@ -13,6 +13,8 @@ export const RestaurantSettings = z.object({
       legend: z.number().int().positive().default(40),
     })
     .default({ regular: 5, vip: 15, legend: 40 }),
+  /** Bonus points when a streak reaches exactly this many visits, e.g. {"3": 20}. */
+  streak_bonuses: z.record(z.string().regex(/^\d+$/), z.number().int().nonnegative()).default({ "3": 20, "5": 50, "10": 100 }),
 });
 export type RestaurantSettings = z.infer<typeof RestaurantSettings>;
 

@@ -2,14 +2,28 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import QRCode from "qrcode";
-import { TIER_LABELS, nextTierProgress, parseSettings, streakStatus, tierRank } from "@loyalty/core";
+import {
+  ChallengeRule,
+  TIER_LABELS,
+  challengeProgress,
+  describeRule,
+  nextStreakBonus,
+  nextTierProgress,
+  parseSettings,
+  progressLabel,
+  streakStatus,
+  tierRank,
+} from "@loyalty/core";
 import { createUserClient } from "@/lib/supabase/server";
-import { getCustomerHome, getRestaurantBySlug } from "@/lib/data/customer";
+import { getCustomerHome, getRestaurantBySlug, hasPendingVisit } from "@/lib/data/customer";
 import type { Restaurant } from "@/lib/data/types";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatMoney } from "@/lib/format";
 import { CheckInBanner } from "@/components/check-in-banner";
 import { ClaimButton } from "@/components/claim-button";
 import { SignOutButton } from "@/components/sign-out-button";
+import { NamePrompt } from "@/components/name-prompt";
+import { LiveRefresh } from "@/components/live-refresh";
+import { PushOptIn } from "@/components/push-opt-in";
 
 export default function LoyaltyPage(props: PageProps<"/r/[slug]">) {
   return (
@@ -34,7 +48,7 @@ async function LoyaltyHome({ params, searchParams }: PageProps<"/r/[slug]">) {
     <Shell restaurant={restaurant}>
       {user ? (
         <>
-          <CheckInBanner restaurantId={restaurant.id} fromTap={fromTap} />
+          <CheckInBanner restaurantId={restaurant.id} fromTap={fromTap} hasPendingVisit={await hasPendingVisit(supabase, restaurant.id, user.id)} />
           <MemberHome restaurant={restaurant} customerId={user.id} />
         </>
       ) : (
@@ -90,7 +104,11 @@ function Teaser({ restaurant, fromTap }: { restaurant: Restaurant; fromTap: bool
 
 async function MemberHome({ restaurant, customerId }: { restaurant: Restaurant; customerId: string }) {
   const supabase = await createUserClient();
-  const { firstName, membership, catalog, rewards, ledger } = await getCustomerHome(supabase, restaurant.id, customerId);
+  const { firstName, membership, catalog, rewards, ledger, challenges, progress: progressRows } = await getCustomerHome(
+    supabase,
+    restaurant.id,
+    customerId,
+  );
   const settings = parseSettings(restaurant.settings);
 
   if (!membership) {
@@ -109,10 +127,23 @@ async function MemberHome({ restaurant, customerId }: { restaurant: Restaurant; 
     membership.last_visit_at ? new Date(membership.last_visit_at) : null,
     settings.streak_window_days,
   );
+  const money = (cents: number) => formatMoney(cents, restaurant.currency);
+  const bonus = nextStreakBonus(streak.state === "active" ? streak.streak : 0, settings.streak_bonuses);
+  const challengeCards = challenges.flatMap((c) => {
+    const rule = ChallengeRule.safeParse({ kind: c.kind, rule: c.rule });
+    if (!rule.success) return []; // e.g. try_items, which needs POS data
+    const row = progressRows.find((p) => p.challenge_id === c.id) ?? null;
+    const p = challengeProgress(rule.data, row?.progress ?? null, row?.status ?? null, membership.current_streak);
+    const prize = [c.reward_templates?.name, c.bonus_points ? `+${c.bonus_points} pts` : null].filter(Boolean).join(" + ");
+    return [{ c, rule: rule.data, p, prize }];
+  });
+  // Unfinished first, then completed.
+  challengeCards.sort((a, b) => Number(a.p.done) - Number(b.p.done));
   const qrSvgs = await Promise.all(rewards.map((r) => QRCode.toString(r.redeem_code, { type: "svg", margin: 1 })));
 
   return (
     <div className="space-y-6">
+      <LiveRefresh membershipId={membership.id} />
       <h1 className="text-2xl font-bold">Hey {firstName ?? "there"} 👋</h1>
 
       <section className="rounded-3xl bg-[var(--brand)] p-5 text-white shadow-lg">
@@ -143,8 +174,44 @@ async function MemberHome({ restaurant, customerId }: { restaurant: Restaurant; 
           <p className="text-sm text-neutral-600">
             Come back by {formatDate(streak.expiresAt.toISOString(), { weekday: "short", day: "numeric", month: "short" })} to keep it going.
           </p>
+          {bonus && (
+            <p className="mt-1 text-sm font-medium text-[var(--brand)]">
+              {bonus.at - streak.streak === 1 ? "Next visit" : `${bonus.at - streak.streak} more visits`} earns a +{bonus.points} streak bonus
+            </p>
+          )}
         </section>
       )}
+
+      {challengeCards.length > 0 && (
+        <section>
+          <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-neutral-500">Challenges</h2>
+          <ul className="space-y-3">
+            {challengeCards.map(({ c, rule, p, prize }) => (
+              <li key={c.id} className={`rounded-2xl bg-white p-4 shadow-sm ${p.done ? "opacity-70" : ""}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold">{p.done ? "✅ " : "🎯 "}{c.title}</p>
+                    <p className="text-sm text-neutral-600">{c.description ?? describeRule(rule, money)}</p>
+                  </div>
+                  {prize && <span className="shrink-0 rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-semibold">{prize}</span>}
+                </div>
+                <div className="mt-3 flex items-center gap-3">
+                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-neutral-100">
+                    <div className="h-full rounded-full bg-[var(--brand)]" style={{ width: `${Math.round(p.fraction * 100)}%` }} />
+                  </div>
+                  <span className="text-xs tabular-nums text-neutral-500" data-testid="challenge-progress">
+                    {p.done ? "Done" : progressLabel(rule, p, money)}
+                  </span>
+                </div>
+                {c.ends_at && !p.done && <p className="mt-1 text-xs text-neutral-400">Ends {formatDate(c.ends_at)}</p>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {!firstName && <NamePrompt />}
+      {streak.state === "active" && streak.streak >= 1 && <PushOptIn restaurantId={restaurant.id} />}
 
       <section>
         <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-neutral-500">Your rewards</h2>

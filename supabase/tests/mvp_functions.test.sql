@@ -1,6 +1,10 @@
 -- Behaviour tests for 0002_mvp_functions.sql. Runs after migrations + seed.
 -- Every block raises on failure, so `psql -v ON_ERROR_STOP=1` exits non-zero.
 
+-- These tests cover the Phase 1 rules, so switch off Phase 2 streak bonuses here.
+-- Each test file sets the settings it relies on, so files can run in any order.
+update restaurants set settings = settings || '{"streak_bonuses": {}}' where id = '11111111-1111-1111-1111-111111111111';
+
 -- Fixtures: one customer (via the auth trigger) and one staff user.
 insert into auth.users (id, phone) values ('aaaaaaaa-0000-0000-0000-000000000001', '+447700900001');
 insert into auth.users (id, email) values ('bbbbbbbb-0000-0000-0000-000000000001', 'staff@example.com');
@@ -19,7 +23,7 @@ begin
 
   -- Untrusted tap -> pending visit, no points yet.
   res := check_in(c, r, t, false);
-  assert res->>'status' = 'pending', 'untrusted tap is pending: ' || res;
+  assert res->>'status' = 'pending', 'untrusted tap is pending: ' || res::text;
   vid := (res->>'visit_id')::uuid;
   assert (select points_balance from memberships where customer_id = c) = 0, 'no points while pending';
 
@@ -29,8 +33,8 @@ begin
 
   -- A trusted tap upgrades the pending visit instead of creating another.
   res := check_in(c, r, t, true);
-  assert res->>'status' = 'confirmed' and (res->>'visit_id')::uuid = vid, 'trusted tap confirms pending: ' || res;
-  assert (res->>'points_awarded')::int = 10 and (res->>'streak')::int = 1, 'points and streak: ' || res;
+  assert res->>'status' = 'confirmed' and (res->>'visit_id')::uuid = vid, 'trusted tap confirms pending: ' || res::text;
+  assert (res->>'points_awarded')::int = 10 and (res->>'streak')::int = 1, 'points and streak: ' || res::text;
 
   -- Confirming again is idempotent.
   res := confirm_visit(vid);
@@ -39,7 +43,7 @@ begin
 
   -- Within the cooldown, taps are rejected.
   res := check_in(c, r, t, true);
-  assert res->>'status' = 'cooldown', 'cooldown enforced: ' || res;
+  assert res->>'status' = 'cooldown', 'cooldown enforced: ' || res::text;
 end $$;
 
 -- Simulate 4 more visits, each 3 days apart, to test streak and tier.
@@ -59,16 +63,16 @@ begin
     returning id into vid;
     res := confirm_visit(vid, 'bbbbbbbb-0000-0000-0000-000000000001', case when i = 4 then 2500 end);
   end loop;
-  assert (res->>'streak')::int = 5, 'streak continues within window: ' || res;
-  assert res->>'tier' = 'regular' and (res->>'tier_upgraded')::boolean, '5th visit reaches regular: ' || res;
-  assert (res->>'points_awarded')::int = 35, 'spend adds points (10 + 25): ' || res;
-  assert (res->>'points_balance')::int = 75, 'balance: ' || res;
+  assert (res->>'streak')::int = 5, 'streak continues within window: ' || res::text;
+  assert res->>'tier' = 'regular' and (res->>'tier_upgraded')::boolean, '5th visit reaches regular: ' || res::text;
+  assert (res->>'points_awarded')::int = 35, 'spend adds points (10 + 25): ' || res::text;
+  assert (res->>'points_balance')::int = 75, 'balance: ' || res::text;
 
   -- A gap longer than the streak window resets the streak.
   insert into visits (restaurant_id, customer_id, source, status, visited_at)
   values (r, c, 'staff', 'pending', now() + interval '20 days') returning id into vid;
   res := confirm_visit(vid);
-  assert (res->>'streak')::int = 1, 'streak resets after window: ' || res;
+  assert (res->>'streak')::int = 1, 'streak resets after window: ' || res::text;
   assert (select longest_streak from memberships where customer_id = c) = 5, 'longest streak kept';
 end $$;
 
@@ -83,7 +87,7 @@ declare
   ok    boolean;
 begin
   res := claim_reward(c, (select id from reward_templates where name = 'Free coffee'));
-  assert (res->>'points_balance')::int = 35, 'claim debits 50 points: ' || res;
+  assert (res->>'points_balance')::int = 35, 'claim debits 50 points: ' || res::text;
   code := res->>'redeem_code';
   assert exists (select 1 from points_ledger where delta = -50 and reason = 'redemption'), 'ledger debit row';
 
@@ -112,7 +116,7 @@ begin
   assert ok, 'non-staff cannot redeem';
 
   res := redeem_reward(staff, r, lower(code));
-  assert res->>'status' = 'redeemed', 'staff redeem (case-insensitive): ' || res;
+  assert res->>'status' = 'redeemed', 'staff redeem (case-insensitive): ' || res::text;
 
   begin
     perform redeem_reward(staff, r, code);

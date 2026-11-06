@@ -1,10 +1,10 @@
 import { Suspense } from "react";
-import Link from "next/link";
 import { TIER_LABELS, type Tier } from "@loyalty/core";
 import { requireStaff } from "@/lib/auth";
 import { formatDateTime, formatMoney } from "@/lib/format";
 import { getDashboard } from "@/lib/data/dashboard";
 import { ActionForm } from "@/components/action-form";
+import { AdminNav } from "@/components/admin-nav";
 import { createRewardTemplate, createTag, setTemplateActive } from "./actions";
 
 export default function AdminDashboardPage(props: PageProps<"/admin/[restaurantId]">) {
@@ -31,13 +31,7 @@ async function Dashboard({ params }: PageProps<"/admin/[restaurantId]">) {
 
   return (
     <main className="mx-auto max-w-5xl space-y-8 px-4 py-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold">{restaurant.name}</h1>
-        <nav className="flex gap-4 text-sm">
-          <Link className="underline" href={`/r/${restaurant.slug}`}>Customer page</Link>
-          <Link className="underline" href={`/staff/${restaurantId}`}>Staff mode</Link>
-        </nav>
-      </header>
+      <AdminNav restaurantId={restaurantId} name={restaurant.name} slug={restaurant.slug} current="" />
 
       <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {kpis.map((k) => (

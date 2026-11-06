@@ -1,3 +1,5 @@
+export type CompletedChallenge = { challenge_id: string; title: string; bonus_points: number; reward_id: string | null };
+
 /** Result shapes returned by the check_in / confirm_visit SQL functions. */
 export type CheckInResult =
   | {
@@ -9,6 +11,8 @@ export type CheckInResult =
       tier: string;
       tier_upgraded?: boolean;
       already_confirmed?: boolean;
+      streak_bonus?: number;
+      challenges_completed?: CompletedChallenge[];
     }
   | { status: "pending"; visit_id: string }
   | { status: "cooldown"; visit_id: string; next_eligible_at: string };

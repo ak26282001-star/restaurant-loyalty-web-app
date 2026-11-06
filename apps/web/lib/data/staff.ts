@@ -18,7 +18,7 @@ export async function getPendingVisits(supabase: SupabaseClient, restaurantId: s
 
 export type ConfirmedVisit = { id: string; visited_at: string; spend_cents: number | null; first_name: string | null; points: number | null };
 
-/** Visits staff confirmed in the last two hours, newest first, with the points each earned. */
+/** Visits staff confirmed in the last two hours, newest first, with the points each earned (incl. streak bonus). */
 export async function getRecentlyConfirmed(supabase: SupabaseClient, restaurantId: string): Promise<ConfirmedVisit[]> {
   const { data: visits } = await supabase
     .from("visits")
@@ -35,10 +35,11 @@ export async function getRecentlyConfirmed(supabase: SupabaseClient, restaurantI
   const { data: ledger } = await supabase
     .from("points_ledger")
     .select("ref_id, delta")
-    .eq("reason", "visit")
+    .in("reason", ["visit", "streak_bonus"])
     .in("ref_id", visits.map((v) => v.id))
     .returns<{ ref_id: string; delta: number }[]>();
-  const points = new Map((ledger ?? []).map((l) => [l.ref_id, l.delta]));
+  const points = new Map<string, number>();
+  for (const l of ledger ?? []) points.set(l.ref_id, (points.get(l.ref_id) ?? 0) + l.delta);
 
   return visits.map((v) => ({
     id: v.id,

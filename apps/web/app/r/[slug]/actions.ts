@@ -5,6 +5,7 @@ import { z } from "zod";
 import { mapDbError } from "@loyalty/core";
 import { getUser } from "@/lib/auth";
 import { adminClient } from "@/lib/supabase/admin";
+import { createUserClient } from "@/lib/supabase/server";
 
 export type ClaimState = { error?: string; ok?: boolean } | null;
 
@@ -31,4 +32,28 @@ export async function claimReward(_prev: ClaimState, formData: FormData): Promis
   }
   refresh();
   return { ok: true };
+}
+
+export type NameState = { error?: string } | null;
+
+/** Save the customer's first name (the only profile field the loyalty page asks for). */
+export async function saveFirstName(_prev: NameState, formData: FormData): Promise<NameState> {
+  const parsed = z
+    .string()
+    .trim()
+    .min(1, "Please enter a name.")
+    .max(40, "That's a bit long. Try a shorter name.")
+    .regex(/^[\p{L}\p{M}' .-]+$/u, "Letters only, please.")
+    .safeParse(formData.get("firstName"));
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+
+  const supabase = await createUserClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Please sign in again." };
+
+  // Runs as the customer: RLS limits it to their own row, column grants to profile fields.
+  const { error } = await supabase.from("customers").update({ first_name: parsed.data }).eq("id", user.id);
+  if (error) return { error: "Couldn't save that. Please try again." };
+  refresh();
+  return null;
 }

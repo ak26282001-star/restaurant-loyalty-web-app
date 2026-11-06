@@ -21,3 +21,13 @@ insert into reward_templates (restaurant_id, name, kind, value, points_cost, min
   ('11111111-1111-1111-1111-111111111111', '20% off your bill',    'percent_off', 20,   250, 'regular', 900, 14),
   ('11111111-1111-1111-1111-111111111111', 'Chef''s table tasting', 'experience', null, 600, 'vip',    2500, 30)
 on conflict do nothing;
+
+-- Phase 2 demo challenges
+insert into challenges (restaurant_id, title, description, kind, rule, reward_template_id, bonus_points, starts_at) values
+  ('11111111-1111-1111-1111-111111111111', 'Hat-trick', 'Visit 3 times in 14 days and dessert is on us.',
+   'visit_count', '{"visits": 3, "within_days": 14}',
+   (select id from reward_templates where name = 'Free dessert' and restaurant_id = '11111111-1111-1111-1111-111111111111'),
+   0, now() - interval '30 days'),
+  ('11111111-1111-1111-1111-111111111111', 'Big night out', 'Spend £60 across your visits this month for 100 bonus points.',
+   'spend_amount', '{"spend_cents": 6000, "within_days": 30}', null, 100, now() - interval '30 days')
+on conflict do nothing;

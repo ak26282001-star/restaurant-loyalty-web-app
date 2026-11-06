@@ -1,6 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { LedgerEntry, Membership, Restaurant, RewardTemplate, WalletReward } from "./types";
+import type { Challenge, ChallengeProgressRow, LedgerEntry, Membership, Restaurant, RewardTemplate, WalletReward } from "./types";
 
 export async function getRestaurantBySlug(supabase: SupabaseClient, slug: string) {
   const { data } = await supabase
@@ -13,7 +13,8 @@ export async function getRestaurantBySlug(supabase: SupabaseClient, slug: string
 
 /** Everything the loyalty home needs, read as the customer (RLS-scoped). */
 export async function getCustomerHome(supabase: SupabaseClient, restaurantId: string, customerId: string) {
-  const [{ data: customer }, { data: membership }, { data: catalog }] = await Promise.all([
+  const nowIso = new Date().toISOString();
+  const [{ data: customer }, { data: membership }, { data: catalog }, { data: challenges }] = await Promise.all([
     supabase.from("customers").select("first_name").eq("id", customerId).maybeSingle<{ first_name: string | null }>(),
     supabase
       .from("memberships")
@@ -29,12 +30,23 @@ export async function getCustomerHome(supabase: SupabaseClient, restaurantId: st
       .not("points_cost", "is", null)
       .order("points_cost")
       .returns<RewardTemplate[]>(),
+    // RLS returns public challenges plus personalised ones this customer is enrolled in.
+    supabase
+      .from("challenges")
+      .select("id, title, description, kind, rule, bonus_points, ends_at, reward_templates(name)")
+      .eq("restaurant_id", restaurantId)
+      .eq("is_active", true)
+      .lte("starts_at", nowIso)
+      .or(`ends_at.is.null,ends_at.gt.${nowIso}`)
+      .order("starts_at")
+      .returns<Challenge[]>(),
   ]);
 
   let rewards: WalletReward[] = [];
   let ledger: LedgerEntry[] = [];
+  let progress: ChallengeProgressRow[] = [];
   if (membership) {
-    const [r, l] = await Promise.all([
+    const [r, l, p] = await Promise.all([
       supabase
         .from("rewards")
         .select("id, title, message, redeem_code, expires_at, origin")
@@ -50,10 +62,36 @@ export async function getCustomerHome(supabase: SupabaseClient, restaurantId: st
         .order("created_at", { ascending: false })
         .limit(10)
         .returns<LedgerEntry[]>(),
+      supabase
+        .from("challenge_progress")
+        .select("challenge_id, status, progress, completed_at")
+        .eq("membership_id", membership.id)
+        .returns<ChallengeProgressRow[]>(),
     ]);
     rewards = r.data ?? [];
     ledger = l.data ?? [];
+    progress = p.data ?? [];
   }
 
-  return { firstName: customer?.first_name ?? null, membership, catalog: catalog ?? [], rewards, ledger };
+  return {
+    firstName: customer?.first_name ?? null,
+    membership,
+    catalog: catalog ?? [],
+    rewards,
+    ledger,
+    challenges: challenges ?? [],
+    progress,
+  };
+}
+
+/** Whether the customer has a tap waiting for staff confirmation (pending visits expire after 2 hours). */
+export async function hasPendingVisit(supabase: SupabaseClient, restaurantId: string, customerId: string) {
+  const { count } = await supabase
+    .from("visits")
+    .select("id", { count: "exact", head: true })
+    .eq("restaurant_id", restaurantId)
+    .eq("customer_id", customerId)
+    .eq("status", "pending")
+    .gt("visited_at", new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString());
+  return (count ?? 0) > 0;
 }

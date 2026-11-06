@@ -35,3 +35,21 @@ export type RewardTemplate = {
 };
 
 export type LedgerEntry = { id: number; delta: number; reason: string; created_at: string };
+
+export type Challenge = {
+  id: string;
+  title: string;
+  description: string | null;
+  kind: string;
+  rule: unknown;
+  bonus_points: number;
+  ends_at: string | null;
+  reward_templates: { name: string } | null;
+};
+
+export type ChallengeProgressRow = {
+  challenge_id: string;
+  status: "active" | "completed" | "expired";
+  progress: { value: number; target: number } | null;
+  completed_at: string | null;
+};

@@ -42,15 +42,21 @@ function currentPosition(): Promise<{ lat: number; lng: number }> {
  * it remembers whether the first render came from a tap, so the result stays visible after
  * router.refresh() re-renders the page without ?from=tap.
  */
-export function CheckInBanner({ restaurantId, fromTap }: { restaurantId: string; fromTap: boolean }) {
+export function CheckInBanner({ restaurantId, fromTap, hasPendingVisit }: { restaurantId: string; fromTap: boolean; hasPendingVisit: boolean }) {
   const router = useRouter();
   const [active] = useState(fromTap);
+  // Once the server has shown our visit as pending, its disappearance means staff confirmed it
+  // (the page refreshes live). Until then, a missing pending visit just means "not loaded yet".
+  const [sawPending, setSawPending] = useState(false);
+  if (hasPendingVisit && !sawPending) setSawPending(true);
   const [state, setState] = useState<State>({ kind: "loading" });
   const started = useRef(false);
 
   const finish = useCallback((result: CheckInResult) => {
     setState({ kind: "result", result });
-    if (result.status === "confirmed") router.refresh(); // pull the new balance and streak
+    // Pull the new balance and streak. A first-ever tap also creates the membership,
+    // so the page needs refreshing even when the visit is still pending.
+    if (result.status !== "cooldown") router.refresh();
   }, [router]);
 
   useEffect(() => {
@@ -102,6 +108,14 @@ export function CheckInBanner({ restaurantId, fromTap }: { restaurantId: string;
       <div className={`${box} animate-[pop_400ms_ease-out] bg-[var(--brand)] text-white`} aria-live="polite">
         <p className="text-2xl font-bold">{result.already_confirmed ? "You're checked in ✅" : "Checked in! 🎉"}</p>
         {result.points_awarded ? <p className="mt-1 text-lg">+{result.points_awarded} points</p> : null}
+        {result.streak_bonus ? <p className="mt-1 font-semibold">🔥 Streak bonus +{result.streak_bonus}</p> : null}
+        {result.challenges_completed?.map((c) => (
+          <p key={c.challenge_id} className="mt-1 font-semibold">
+            🎯 Challenge complete: {c.title}
+            {c.bonus_points ? ` (+${c.bonus_points})` : ""}
+            {c.reward_id ? " · reward added below" : ""}
+          </p>
+        ))}
         {result.tier_upgraded ? <p className="mt-1 font-semibold">You&apos;ve reached a new tier!</p> : null}
       </div>
     );
@@ -110,6 +124,14 @@ export function CheckInBanner({ restaurantId, fromTap }: { restaurantId: string;
     return (
       <div className={`${box} bg-white text-neutral-700`} aria-live="polite">
         You&apos;ve already checked in today. Thanks for coming back! 💛
+      </div>
+    );
+  }
+  if (sawPending && !hasPendingVisit) {
+    return (
+      <div className={`${box} bg-[var(--brand)] text-white`} aria-live="polite">
+        <p className="text-2xl font-bold">Visit confirmed! 🎉</p>
+        <p className="mt-1">Your points are below.</p>
       </div>
     );
   }
