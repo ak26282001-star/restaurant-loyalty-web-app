@@ -20,6 +20,12 @@ export const ChallengeRule = z.discriminatedUnion("kind", [
     }),
   }),
   z.object({ kind: z.literal("streak"), rule: z.object({ length: z.number().int().min(2).max(100) }) }),
+  z.object({
+    kind: z.literal("try_items"),
+    rule: z
+      .object({ menu_item_ids: z.array(z.guid()).min(1).max(20), need: z.number().int().min(1).max(20).optional(), within_days: withinDays })
+      .refine((r) => (r.need ?? r.menu_item_ids.length) <= r.menu_item_ids.length, "need can't exceed the number of dishes"),
+  }),
 ]);
 export type ChallengeRule = z.infer<typeof ChallengeRule>;
 export type ChallengeKind = ChallengeRule["kind"];
@@ -48,6 +54,8 @@ export function challengeTarget(c: ChallengeRule): number {
       return c.rule.spend_cents;
     case "streak":
       return c.rule.length;
+    case "try_items":
+      return c.rule.need ?? c.rule.menu_item_ids.length;
   }
 }
 
@@ -67,6 +75,11 @@ export function describeRule(c: ChallengeRule, formatMoney: (cents: number) => s
     }
     case "streak":
       return `Reach a ${c.rule.length}-visit streak`;
+    case "try_items": {
+      const total = c.rule.menu_item_ids.length;
+      const need = c.rule.need ?? total;
+      return (need === total ? `Try ${plural(total, "dish", "dishes")}` : `Try ${need} of ${total} dishes`) + days(c.rule.within_days);
+    }
   }
 }
 
@@ -85,6 +98,6 @@ export function nextStreakBonus(streak: number, bonuses: Record<string, number>)
   return next ?? null;
 }
 
-function plural(n: number, word: string) {
-  return `${n} ${word}${n === 1 ? "" : "s"}`;
+function plural(n: number, word: string, many = `${word}s`) {
+  return `${n} ${n === 1 ? word : many}`;
 }

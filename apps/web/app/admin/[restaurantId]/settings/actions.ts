@@ -18,6 +18,7 @@ const Form = z.object({
   tier_vip: int(2, 1000),
   tier_legend: int(3, 1000),
   streak_bonuses: z.string().trim().max(200),
+  country_calling_code: z.string().trim().regex(/^\+?\d{0,4}$/),
 });
 
 /** "3=20, 5=50" → {"3": 20, "5": 50}. Empty string means no streak bonuses. */
@@ -55,6 +56,7 @@ export async function saveSettings(_prev: ActionState, formData: FormData): Prom
       tiers: { regular: f.tier_regular, vip: f.tier_vip, legend: f.tier_legend },
       streak_bonuses: bonuses,
     }),
+    country_calling_code: f.country_calling_code.replace("+", ""),
   };
 
   const { error } = await supabase.from("restaurants").update({ settings: next }).eq("id", f.restaurantId);

@@ -13,7 +13,8 @@ const Form = z.object({
   restaurantId: z.guid(),
   title: z.string().trim().min(2).max(60),
   description: z.string().trim().max(160).optional(),
-  kind: z.enum(["visit_count", "spend_amount", "time_window", "streak"]),
+  kind: z.enum(["visit_count", "spend_amount", "time_window", "streak", "try_items"]),
+  need: optionalInt(1, 20),
   visits: optionalInt(1, 100),
   within_days: optionalInt(1, 365),
   spend: z.preprocess((v) => (v === "" || v == null ? undefined : Number(v)), z.number().positive().max(100_000).optional()),
@@ -25,7 +26,7 @@ const Form = z.object({
 });
 
 /** Turns the flat form fields into the typed rule the SQL evaluator understands. */
-function buildRule(f: z.infer<typeof Form>, weekdays: number[]) {
+function buildRule(f: z.infer<typeof Form>, weekdays: number[], dishes: string[]) {
   switch (f.kind) {
     case "visit_count":
       return { kind: f.kind, rule: { visits: f.visits, within_days: f.within_days } };
@@ -38,6 +39,8 @@ function buildRule(f: z.infer<typeof Form>, weekdays: number[]) {
       };
     case "streak":
       return { kind: f.kind, rule: { length: f.length } };
+    case "try_items":
+      return { kind: f.kind, rule: { menu_item_ids: dishes, need: f.need, within_days: f.within_days } };
   }
 }
 
@@ -47,12 +50,19 @@ export async function createChallenge(_prev: ActionState, formData: FormData): P
   const f = form.data;
 
   const weekdays = formData.getAll("weekdays").map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6).sort();
-  const rule = ChallengeRule.safeParse(JSON.parse(JSON.stringify(buildRule(f, weekdays)))); // drops undefined keys
+  const dishes = [...new Set(formData.getAll("dishes").map(String))];
+  if (f.kind === "try_items" && !dishes.length) return { error: "Pick at least one dish." };
+  const rule = ChallengeRule.safeParse(JSON.parse(JSON.stringify(buildRule(f, weekdays, dishes)))); // drops undefined keys
   if (!rule.success) return { error: "Fill in the goal for this type of challenge." };
   if (f.kind === "time_window" && !weekdays.length && !f.daypart) return { error: "Pick at least one day or a time of day." };
   if (!f.bonus_points && !f.reward_template_id) return { error: "Give a prize: bonus points, a reward, or both." };
 
   const { supabase } = await requireStaff(f.restaurantId, "manager");
+  if (rule.data.kind === "try_items") {
+    const { count } = await supabase.from("menu_items").select("id", { count: "exact", head: true })
+      .eq("restaurant_id", f.restaurantId).in("id", rule.data.rule.menu_item_ids);
+    if (count !== rule.data.rule.menu_item_ids.length) return { error: "Some of those dishes aren't on your menu." };
+  }
   const { error } = await supabase.from("challenges").insert({
     restaurant_id: f.restaurantId,
     title: f.title,

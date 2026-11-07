@@ -11,7 +11,8 @@
     "test:db": "scripts/test-db.sh",
     "test:e2e": "node e2e/journey.mjs",
     "supabase": "supabase",
-    "test:e2e:engagement": "node e2e/engagement.mjs"
+    "test:e2e:engagement": "node e2e/engagement.mjs",
+    "test:e2e:intelligence": "node e2e/intelligence.mjs"
   },
   "devDependencies": {
     "http_ece": "^1.2.0",

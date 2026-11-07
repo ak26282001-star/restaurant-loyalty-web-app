@@ -12,11 +12,18 @@ describe("ChallengeRule", () => {
       { kind: "streak", rule: { length: 4 } },
     ]) expect(ChallengeRule.safeParse(c).success).toBe(true);
   });
+  it("accepts try_items with dish ids", () => {
+    const ids = ["11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"];
+    expect(ChallengeRule.safeParse({ kind: "try_items", rule: { menu_item_ids: ids, need: 2 } }).success).toBe(true);
+    expect(ChallengeRule.safeParse({ kind: "try_items", rule: { menu_item_ids: ids, need: 3 } }).success).toBe(false);
+    expect(describeRule({ kind: "try_items", rule: { menu_item_ids: ids } }, gbp)).toBe("Try 2 dishes");
+    expect(describeRule({ kind: "try_items", rule: { menu_item_ids: [...ids, ids[0].replace(/1/g, "3")], need: 2, within_days: 30 } }, gbp)).toBe("Try 2 of 3 dishes in 30 days");
+  });
   it("rejects bad rules", () => {
     expect(ChallengeRule.safeParse({ kind: "visit_count", rule: { visits: 0 } }).success).toBe(false);
     expect(ChallengeRule.safeParse({ kind: "time_window", rule: { visits: 1, weekdays: [7] } }).success).toBe(false);
     expect(ChallengeRule.safeParse({ kind: "time_window", rule: { visits: 1, daypart: "brunch" } }).success).toBe(false);
-    expect(ChallengeRule.safeParse({ kind: "try_items", rule: {} }).success).toBe(false);
+    expect(ChallengeRule.safeParse({ kind: "try_items", rule: { menu_item_ids: [] } }).success).toBe(false);
   });
 });
 

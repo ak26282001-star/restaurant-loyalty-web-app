@@ -5,7 +5,7 @@ on a personalised, mobile-first loyalty page with points, streaks, tiers and rew
 rewards and tags from a dashboard, and staff confirm visits and redeem rewards from a tablet.
 
 The full design is in [`docs/TECHNICAL_PLAN.md`](docs/TECHNICAL_PLAN.md). This repo implements
-**Phase 1 (MVP)** and **Phase 2 (Engagement)** from that plan.
+**Phase 1 (MVP)**, **Phase 2 (Engagement)** and **Phase 3 (Intelligence)** from that plan.
 
 ## What works today
 
@@ -24,6 +24,10 @@ The full design is in [`docs/TECHNICAL_PLAN.md`](docs/TECHNICAL_PLAN.md). This r
 | **Installable app and reminders** *(Phase 2)* | Per-restaurant web app manifest and icons, a service worker with an offline page, and opt-in web push: a daily job reminds guests whose streak ends within 36 hours (once per streak) |
 | **Settings** `/admin/{id}/settings` *(Phase 2)* | Owner edits points per visit and per amount spent, cooldown, streak window, tier thresholds and streak bonuses |
 | **Profile** *(Phase 2)* | Guests add their first name, so staff and the page greet them by name |
+| **Clover POS** *(Phase 3)* | Owner connects Clover from `/admin/{id}/pos` (OAuth). Paid orders arrive by webhook and are matched to members by the phone number or email on the order. A pending tap is confirmed with the real bill, a second bill in the same sitting adds spend, otherwise the order becomes the visit. Dishes are recorded, and the menu syncs from Clover. Tokens are encrypted at rest, and webhooks are authenticated and de-duplicated. |
+| **"Try these dishes" challenges** *(Phase 3)* | Pick dishes from the synced menu, e.g. "try 2 of these 3" |
+| **Customer insights** *(Phase 3)* | Nightly per-guest features: usual gap between visits, how overdue they are, churn risk, favourite dishes, usual time of day. Guests are segmented as new, regular, VIP, at risk or lapsed. |
+| **AI offers** *(Phase 3)* | Rules pick who needs an offer (win-back for at-risk/lapsed, surprises for first-timers and a few regulars, VIP thank-yous) and which catalogue rewards are allowed. Claude picks one and writes the copy. Code enforces the discount cap, weekly limit, monthly budget and "no promises beyond the reward". The owner approves in the **AI offers** inbox (or turns on auto-send); rejection feedback feeds the next run. Without an API key, offers use standard wording. |
 
 Everything that moves points or rewards runs in Postgres functions (`check_in`, `confirm_visit`,
 `claim_reward`, `redeem_reward`, `evaluate_challenges`) inside one transaction with the membership
@@ -40,16 +44,21 @@ apps/web/              Next.js 16 app (App Router, Cache Components, Tailwind v4
   app/r/[slug]/        customer loyalty page + login
   app/staff/, admin/   staff mode and owner dashboard (server actions)
   app/api/v1/          REST: POST /visits/check-in
-  app/api/cron/        daily streak reminders (Vercel Cron, see vercel.json)
+  app/api/cron/        daily streak reminders and nightly AI offers (Vercel Cron, see vercel.json)
+  app/api/pos/clover/  Clover OAuth connect + callback
+  app/api/webhooks/    Clover webhook receiver
+  lib/clover/          Clover API client (regions, token refresh, retries) and order/menu sync
+  lib/ai/              offer run, Claude drafting, reward notifications
   public/sw.js         service worker: push notifications and offline page
   proxy.ts             refreshes the Supabase session cookie (Next 16's replacement for middleware)
-packages/core/         pure TypeScript rules: tiers, streaks, challenges, geofence, settings, push allowlist (+ tests)
+packages/core/         pure TypeScript rules: tiers, streaks, challenges, offers + guardrails, geofence, settings, push allowlist (+ tests)
 supabase/
-  migrations/          0001 schema + RLS, 0002 MVP functions, 0003 engagement + security hardening
+  migrations/          0001 schema + RLS, 0002 MVP functions, 0003 engagement + security hardening, 0004 POS + intelligence
   seed.sql             "Demo Bistro" with tags DEMO01/DEMO02, four rewards and two challenges
   tests/               SQL behaviour and access-control tests
 e2e/journey.mjs        Phase 1 browser test: tap, join, check-in, staff, rewards, dashboard
 e2e/engagement.mjs     Phase 2 browser test: challenges, live updates, settings, API hardening, push, offline
+e2e/intelligence.mjs   Phase 3 test: Clover connect/webhooks/orders, dish challenges, segments, AI offers (with fakes.mjs)
 ```
 
 ## Run it locally
@@ -91,7 +100,36 @@ then sign in at <http://localhost:3000/login> (choose "Use my phone number inste
 | `pnpm typecheck`, `pnpm lint` | TypeScript and ESLint across the workspace |
 | `DATABASE_URL=… pnpm test:db` | Applies migrations + seed to a **throwaway** database and runs the SQL behaviour tests. On plain Postgres, add `WITH_AUTH_STUB=1`. |
 | `pnpm test:e2e` | Phase 1 journey in Chromium against the running app (`pnpm build && pnpm --filter web start`). Run `pnpm supabase db reset` first. Set `CHROMIUM_PATH` to use a preinstalled browser. |
+| `pnpm test:e2e:intelligence` | Phase 3 checks against local fakes of Clover and the Anthropic API (`e2e/fakes.mjs`, ports 8555/8556). Reset the database first and start the app with the variables listed at the top of `e2e/intelligence.mjs`. |
 | `pnpm test:e2e:engagement` | Phase 2 checks, including a real encrypted push to a local fake push service. Reset the database first, and start the app with `PUSH_ENDPOINT_ALLOWLIST=127.0.0.1:8443` and `NODE_EXTRA_CA_CERTS=$PUSH_TLS_DIR/cert.pem`. The script needs `CRON_SECRET`, `SUPABASE_ANON_KEY` and `PUSH_TLS_DIR` (a folder with a self-signed `key.pem` and `cert.pem` for 127.0.0.1). |
+
+## Connecting Clover
+
+1. In the [Clover Global Developer Dashboard](https://www.clover.com/global-developer-home), create an app (start in
+   the sandbox). Give it the **Read orders**, **Read customers**, **Read inventory** and **Read merchant** permissions.
+2. Set the app's **Site URL / redirect** to `https://<your-domain>/api/pos/clover/callback`, and its alternate launch
+   path as Clover's v2 OAuth flow requires.
+3. Under **Webhooks**, enter `https://<your-domain>/api/webhooks/clover` and click **Send Verification Code**. Read
+   the code in the Supabase SQL editor with
+   `select code from pos_webhook_verifications order by id desc limit 1;`, paste it into Clover and click **Verify**.
+   Subscribe to **Orders**, **Inventory** and **Apps**.
+4. Set these in Vercel, then redeploy:
+   - `CLOVER_APP_ID` and `CLOVER_APP_SECRET`
+   - `CLOVER_ENVIRONMENT`: `sandbox`, or `na`, `eu` or `la` for production
+   - `CLOVER_WEBHOOK_AUTH_CODE`: the "Clover Auth Code" shown after verification
+   - `TOKEN_ENCRYPTION_KEY`: from `openssl rand -base64 32`. Keep it safe; losing it means reconnecting.
+5. In the dashboard, set **Settings → Country calling code**. Then, signed in as the owner, open **POS →
+   Connect Clover**. Start from the dashboard rather than the Clover App Market, so the connection is tied to the
+   right restaurant.
+
+Orders only credit a guest when the phone number or email on the Clover order matches their account.
+
+## AI offers
+
+Set `ANTHROPIC_API_KEY` to have Claude write the offer copy (model `claude-opus-5-5`, low effort, with server-side
+refusal fallback). Each nightly run sends at most 25 short requests per restaurant, and the per-restaurant
+instructions are prompt-cached. Without a key, everything still works using standard wording. Guardrails are under
+**AI offers → Guardrails** (owner only).
 
 ## Upgrading a hosted Supabase project
 
@@ -107,10 +145,13 @@ These are in the technical plan but left for later phases:
 - **NTAG 424 DNA (SUN) tag verification.** Taps from `nfc_sun` tags are currently treated like plain tags.
 - **Staff PINs** for shared tablets. Staff currently sign in individually.
 - **Reward activation window** (the 10-minute countdown).
-- **"Try these items" challenges**, which need POS order data (Phase 3), as do POS integration itself,
-  AI offers, campaigns and SMS/email messaging (Phases 3–4).
+- **SMS / email win-back campaigns** with opt-in and STOP handling (Phase 4). Today offers reach guests in their
+  wallet and by push notification.
+- **POS refunds**: a refunded Clover order doesn't claw back points yet.
+- **Other POS systems** (Square, Toast, ...), and installs started from the Clover App Market.
 
 Notes on how the build differs from the plan: the dashboard and staff forms use Next.js server actions
-rather than REST routes (only check-in is a public API route), and background work runs in Postgres
-functions plus one Vercel Cron job instead of Inngest. Both can move to the planned design when
-POS webhooks and campaigns arrive.
+rather than REST routes (only check-in is a public API route). Background work runs in Postgres
+functions, Next.js `after()` for webhooks, and two Vercel Cron jobs instead of Inngest. Offer copy uses
+one request per guest rather than the Batch API, which is fine at up to 25 guests per restaurant per
+night. All three can move to the planned design as volume grows.

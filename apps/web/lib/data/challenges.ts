@@ -14,7 +14,7 @@ export type AdminChallenge = {
 
 /** Public challenges with participation stats, plus the data the create form needs. Read as a manager (RLS). */
 export async function getChallengeAdmin(supabase: SupabaseClient, restaurantId: string) {
-  const [{ data: challenges }, { data: rewards }, { data: restaurant }] = await Promise.all([
+  const [{ data: challenges }, { data: rewards }, { data: restaurant }, { data: dishes }] = await Promise.all([
     supabase
       .from("challenges")
       .select("id, title, kind, rule, bonus_points, is_active, ends_at, reward_templates(name)")
@@ -25,6 +25,7 @@ export async function getChallengeAdmin(supabase: SupabaseClient, restaurantId: 
       .returns<AdminChallenge[]>(),
     supabase.from("reward_templates").select("id, name").eq("restaurant_id", restaurantId).eq("is_active", true).order("name"),
     supabase.from("restaurants").select("currency").eq("id", restaurantId).single<{ currency: string }>(),
+    supabase.from("menu_items").select("id, name").eq("restaurant_id", restaurantId).eq("is_active", true).order("name").limit(300),
   ]);
 
   const ids = (challenges ?? []).map((c) => c.id);
@@ -45,5 +46,6 @@ export async function getChallengeAdmin(supabase: SupabaseClient, restaurantId: 
     stats,
     rewards: (rewards ?? []) as { id: string; name: string }[],
     currency: restaurant?.currency ?? "USD",
+    dishes: (dishes ?? []) as { id: string; name: string }[],
   };
 }

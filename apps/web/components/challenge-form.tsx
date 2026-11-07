@@ -10,9 +10,15 @@ const KINDS = [
   { value: "spend_amount", label: "Spend an amount" },
   { value: "time_window", label: "Visit on certain days / times" },
   { value: "streak", label: "Reach a streak" },
+  { value: "try_items", label: "Try specific dishes" },
 ] as const;
 
-export function ChallengeForm({ restaurantId, rewards, currency }: { restaurantId: string; rewards: { id: string; name: string }[]; currency: string }) {
+export function ChallengeForm({ restaurantId, rewards, currency, dishes }: {
+  restaurantId: string;
+  rewards: { id: string; name: string }[];
+  currency: string;
+  dishes: { id: string; name: string }[];
+}) {
   const [kind, setKind] = useState<(typeof KINDS)[number]["value"]>("visit_count");
   const input = "w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm";
   const label = "block text-xs font-medium text-neutral-600";
@@ -52,6 +58,24 @@ export function ChallengeForm({ restaurantId, rewards, currency }: { restaurantI
           <label className={label} htmlFor="length">Streak length (visits)</label>
           <input id="length" name="length" type="number" min={2} max={100} defaultValue={4} className={input} required />
         </div>
+      )}
+      {kind === "try_items" && (
+        <>
+          <fieldset className="sm:col-span-2">
+            <legend className={label}>Dishes {dishes.length === 0 && "(connect your POS or sync the menu first)"}</legend>
+            <div className="mt-1 flex max-h-48 flex-wrap gap-2 overflow-y-auto">
+              {dishes.map((d) => (
+                <label key={d.id} className="flex items-center gap-1 rounded-lg border border-neutral-300 px-2 py-1 text-sm">
+                  <input type="checkbox" name="dishes" value={d.id} /> {d.name}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          <div>
+            <label className={label} htmlFor="need">How many of them (optional, default all)</label>
+            <input id="need" name="need" type="number" min={1} max={20} className={input} />
+          </div>
+        </>
       )}
       {kind !== "streak" && (
         <div>

@@ -3,10 +3,12 @@ import Link from "next/link";
 const TABS = [
   { href: "", label: "Overview" },
   { href: "/challenges", label: "Challenges" },
+  { href: "/ai", label: "AI offers" },
+  { href: "/pos", label: "POS" },
   { href: "/settings", label: "Settings" },
 ] as const;
 
-export function AdminNav({ restaurantId, name, slug, current }: { restaurantId: string; name: string; slug: string; current: "" | "/challenges" | "/settings" }) {
+export function AdminNav({ restaurantId, name, slug, current }: { restaurantId: string; name: string; slug: string; current: (typeof TABS)[number]["href"] }) {
   return (
     <header className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">

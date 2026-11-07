@@ -18,6 +18,7 @@ async function Settings({ params }: PageProps<"/admin/[restaurantId]/settings">)
   const { supabase, restaurant } = await requireStaff(restaurantId, "owner", `/admin/${restaurantId}/settings`);
   const { data } = await supabase.from("restaurants").select("settings, currency").eq("id", restaurantId).single<{ settings: unknown; currency: string }>();
   const s = parseSettings(data?.settings);
+  const callingCode = (data?.settings as { country_calling_code?: string } | null)?.country_calling_code ?? "";
   const bonuses = Object.entries(s.streak_bonuses).sort(([a], [b]) => Number(a) - Number(b)).map(([k, v]) => `${k}=${v}`).join(", ");
 
   const input = "w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm";
@@ -64,6 +65,11 @@ async function Settings({ params }: PageProps<"/admin/[restaurantId]/settings">)
             <label className={label} htmlFor="streak_bonuses">Streak bonuses</label>
             <input id="streak_bonuses" name="streak_bonuses" defaultValue={bonuses} placeholder="3=20, 5=50, 10=100" className={input} />
             <p className={hint}>Streak length = bonus points. Leave empty for no streak bonuses.</p>
+          </div>
+          <div>
+            <label className={label} htmlFor="country_calling_code">Country calling code</label>
+            <input id="country_calling_code" name="country_calling_code" inputMode="numeric" placeholder="e.g. 44, 1, 91" defaultValue={callingCode} className={input} />
+            <p className={hint}>Used to match phone numbers on POS orders that were typed without +country.</p>
           </div>
           <div className="sm:col-span-2">
             <button className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-semibold text-white">Save settings</button>

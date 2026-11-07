@@ -19,7 +19,7 @@ export default function ChallengesPage(props: PageProps<"/admin/[restaurantId]/c
 async function Challenges({ params }: PageProps<"/admin/[restaurantId]/challenges">) {
   const { restaurantId } = await params;
   const { supabase, restaurant } = await requireStaff(restaurantId, "manager", `/admin/${restaurantId}/challenges`);
-  const { challenges, stats, rewards, currency } = await getChallengeAdmin(supabase, restaurantId);
+  const { challenges, stats, rewards, currency, dishes } = await getChallengeAdmin(supabase, restaurantId);
   const money = (c: number) => formatMoney(c, currency);
 
   return (
@@ -65,7 +65,7 @@ async function Challenges({ params }: PageProps<"/admin/[restaurantId]/challenge
 
       <section className="rounded-2xl bg-white p-4 shadow-sm">
         <h2 className="mb-3 text-lg font-semibold">New challenge</h2>
-        <ChallengeForm restaurantId={restaurantId} rewards={rewards} currency={currency} />
+        <ChallengeForm restaurantId={restaurantId} rewards={rewards} currency={currency} dishes={dishes} />
       </section>
     </main>
   );
