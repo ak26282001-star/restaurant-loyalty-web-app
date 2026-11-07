@@ -1,6 +1,7 @@
 import { NextResponse, after, type NextRequest } from "next/server";
 import { createHash } from "node:crypto";
 import { isValidTagCode } from "@loyalty/core";
+import { configProblems } from "@/lib/env";
 import { adminClient } from "@/lib/supabase/admin";
 import { clientIp, rateLimiter } from "@/lib/rate-limit";
 import { DEVICE_COOKIE, TAP_COOKIE, TAP_TOKEN_TTL_SECONDS, signTapToken } from "@/lib/tap-token";
@@ -14,6 +15,10 @@ type TagRow = { id: string; kind: "nfc" | "nfc_sun" | "qr"; restaurant_id: strin
  */
 export async function GET(request: NextRequest, ctx: RouteContext<"/t/[code]">) {
   const { code } = await ctx.params;
+  if (configProblems().length) {
+    console.error("tap failed: server is not configured; see /api/health");
+    return new NextResponse("Rewards are temporarily unavailable. Please try again soon.", { status: 503 });
+  }
   const ip = clientIp(request.headers);
 
   if (!(await rateLimiter("tap", 30, "1 m").limit(ip)).success) {

@@ -5,6 +5,7 @@ import { publicEnv } from "@/lib/env";
 /** Per-restaurant web app manifest, so "Add to Home Screen" opens that restaurant's page with its name and colour. */
 export async function GET(_request: NextRequest, ctx: RouteContext<"/r/[slug]/manifest.webmanifest">) {
   const { slug } = await ctx.params;
+  if (!publicEnv.supabaseUrl || !publicEnv.supabaseAnonKey) return new NextResponse("Not configured", { status: 503 });
   // Public branding only, read with the anon key (RLS allows public read of restaurants).
   const supabase = createClient(publicEnv.supabaseUrl, publicEnv.supabaseAnonKey, { auth: { persistSession: false } });
   const { data: r } = await supabase.from("restaurants").select("name, slug, brand_color").eq("slug", slug).maybeSingle();

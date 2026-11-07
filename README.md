@@ -103,6 +103,18 @@ then sign in at <http://localhost:3000/login> (choose "Use my phone number inste
 | `pnpm test:e2e:intelligence` | Phase 3 checks against local fakes of Clover and the Anthropic API (`e2e/fakes.mjs`, ports 8555/8556). Reset the database first and start the app with the variables listed at the top of `e2e/intelligence.mjs`. |
 | `pnpm test:e2e:engagement` | Phase 2 checks, including a real encrypted push to a local fake push service. Reset the database first, and start the app with `PUSH_ENDPOINT_ALLOWLIST=127.0.0.1:8443` and `NODE_EXTRA_CA_CERTS=$PUSH_TLS_DIR/cert.pem`. The script needs `CRON_SECRET`, `SUPABASE_ANON_KEY` and `PUSH_TLS_DIR` (a folder with a self-signed `key.pem` and `cert.pem` for 127.0.0.1). |
 
+## Troubleshooting a deployment
+
+Open **`/api/health`** on your site. It lists what's wrong in plain words: settings that are missing or invalid,
+whether Supabase is reachable, which migrations the database is missing, and whether the secret key is really the
+secret one. It reports names and yes/no only, never values. It returns HTTP 200 when everything required is in place.
+
+- **Supabase keys:** either naming works. Use `NEXT_PUBLIC_SUPABASE_ANON_KEY` or `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`,
+  and `SUPABASE_SERVICE_ROLE_KEY` or `SUPABASE_SECRET_KEY`.
+- **After changing a `NEXT_PUBLIC_*` setting in Vercel, redeploy.** Those values are built into the app.
+- If a page shows "Something went wrong" with a reference code, search for that code in Vercel → your project →
+  **Logs** to see the underlying error.
+
 ## Connecting Clover
 
 1. In the [Clover Global Developer Dashboard](https://www.clover.com/global-developer-home), create an app (start in
